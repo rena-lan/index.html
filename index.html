@@ -1,780 +1,314 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  PlusCircle, History, CheckCircle2, BrainCircuit, ArrowRight, Trophy, 
-  XCircle, HelpCircle, Sparkles, ArrowLeft, BookOpen, School, Target, 
-  ChevronRight, Clock, Lightbulb, PauseCircle, PlayCircle, Flame
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-
-// --- FIREBASE IMPORTS ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
-
-// --- CONFIGURAÇÕES ---
-const apiKey = "";
-const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
-
-// Inicialização segura do Firebase
-let app, auth, db, appId;
-try {
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'genial-ia-app';
-} catch (error) {
-  console.warn("Aviso: Firebase não configurado corretamente. O app usará memória local se falhar.", error);
-}
-
-const App = () => {
-  // --- ESTADOS GERAIS ---
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [view, setView] = useState('home'); // home, setup, loading, quiz, result, recommendation, history
-  
-  // --- ESTADOS DE DADOS ---
-  const [exams, setExams] = useState([]);
-  const [currentExam, setCurrentExam] = useState(null);
-  const [userAnswers, setUserAnswers] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(null);
-  const [revealedHints, setRevealedHints] = useState([]);
-
-  // --- FORMULÁRIO ---
-  const [formData, setFormData] = useState({
-    theme: '',
-    grade: '9º ano',
-    difficulty: 'Médio',
-    quantity: 5,
-    duration: 0 // 0 significa sem limite
-  });
-
-  // --- AUTENTICAÇÃO E SINCRONIZAÇÃO (FIREBASE) ---
-  useEffect(() => {
-    if (!auth) return;
-
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Erro de autenticação:", err);
-      }
-    };
-
-    initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Buscar dados do usuário (Histórico e Provas em andamento)
-  useEffect(() => {
-    if (!user || !db) return;
-
-    const examsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'exams');
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gênio.app - Provas com IA</title>
+    <!-- Tailwind CSS para o Design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     
-    const unsubscribe = onSnapshot(examsRef, (snapshot) => {
-      const examsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Ordenar por data mais recente (decrescente)
-      examsList.sort((a, b) => b.createdAt - a.createdAt);
-      setExams(examsList);
-      
-      // Se houver uma prova ativa e o usuário acabou de entrar, sugere continuar
-      if (view === 'home') {
-        const activeExam = examsList.find(e => e.status === 'draft');
-        if (activeExam && !currentExam) {
-          setCurrentExam(activeExam);
-          setUserAnswers(activeExam.userAnswers || {});
-          setRevealedHints(activeExam.revealedHints || []);
-        }
-      }
-    }, (error) => {
-      console.error("Erro ao buscar provas:", error);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // --- FUNÇÕES DE BANCO DE DADOS ---
-  const saveProgressToCloud = async (examId, dataToMerge) => {
-    if (!user || !db) return;
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'exams', examId);
-      await setDoc(docRef, dataToMerge, { merge: true });
-    } catch (e) {
-      console.error("Erro ao salvar na nuvem:", e);
-    }
-  };
-
-  // --- LÓGICA DO APLICATIVO ---
-  const generateExam = async () => {
-    setLoading(true);
-    setView('loading');
-    setError(null);
-
-    const prompt = `
-      Crie uma prova escolar em formato JSON estrito.
-      Tema: ${formData.theme}
-      Ano Escolar: ${formData.grade}
-      Nível: ${formData.difficulty}
-      Quantidade de questões: ${formData.quantity}
-
-      REGRAS:
-      1. Apenas Múltipla Escolha (4 opções).
-      2. O JSON deve seguir a estrutura exata abaixo:
-      {
-        "title": "Título Criativo da Prova",
-        "questions": [
-          { 
-            "id": "q1", 
-            "text": "Pergunta clara e objetiva?", 
-            "options": ["Opção 1", "Opção 2", "Opção 3", "Opção 4"], 
-            "correctIndex": 0,
-            "hint": "Uma dica curta e sutil para ajudar o aluno a pensar, sem dar a resposta direta.",
-            "easyExplanation": "Uma explicação MUITO fácil de entender, com linguagem informal (tipo 'Saca só', 'Imagina que...', 'Olha que legal').",
-            "futureTip": "Uma dica de ouro pra pessoa não errar isso nunca mais na vida."
-          }
-        ]
-      }
-    `;
-
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
-      });
-
-      const data = await response.json();
-      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      const examData = JSON.parse(resultText);
-      
-      const newExamId = Date.now().toString();
-      const completeExam = {
-        ...examData,
-        id: newExamId,
-        metadata: { ...formData },
-        status: 'draft',
-        createdAt: Date.now(),
-        startedAt: Date.now(),
-        userAnswers: {},
-        revealedHints: []
-      };
-
-      // Salva na nuvem imediatamente
-      await saveProgressToCloud(newExamId, completeExam);
-
-      setCurrentExam(completeExam);
-      setUserAnswers({});
-      setRevealedHints([]);
-      setView('quiz');
-    } catch (err) {
-      console.error(err);
-      setError("Ops! Falha ao criar a prova. Tente um tema mais simples.");
-      setView('setup');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAnswer = (questionId, optionIndex) => {
-    const newAnswers = { ...userAnswers, [questionId]: optionIndex };
-    setUserAnswers(newAnswers);
-    if (currentExam) {
-      saveProgressToCloud(currentExam.id, { userAnswers: newAnswers });
-    }
-  };
-
-  const revealHint = (questionId) => {
-    if (!revealedHints.includes(questionId)) {
-      const newHints = [...revealedHints, questionId];
-      setRevealedHints(newHints);
-      if (currentExam) {
-        saveProgressToCloud(currentExam.id, { revealedHints: newHints });
-      }
-    }
-  };
-
-  const finishQuiz = async (examToFinish = currentExam) => {
-    if (!examToFinish) return;
-
-    let score = 0;
-    examToFinish.questions.forEach(q => {
-      if (userAnswers[q.id] === q.correctIndex) score++;
-    });
-    
-    const results = {
-      score,
-      total: examToFinish.questions.length,
-      percentage: Math.round((score / examToFinish.questions.length) * 100)
-    };
-    
-    const updatedExam = { 
-      ...examToFinish, 
-      status: 'completed', 
-      results,
-      userAnswers 
-    };
-
-    setCurrentExam(updatedExam);
-    await saveProgressToCloud(examToFinish.id, { status: 'completed', results });
-    setView('result');
-  };
-
-  // --- CONTROLE DE TEMPO (TIMER) ---
-  useEffect(() => {
-    if (view !== 'quiz' || !currentExam) return;
-
-    // Se a duração for 0, não tem limite de tempo
-    if (!currentExam.metadata.duration || currentExam.metadata.duration === 0) {
-      setTimeLeft(null);
-      return;
-    }
-
-    const durationMs = currentExam.metadata.duration * 60 * 1000;
-    const endTime = currentExam.startedAt + durationMs;
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const remaining = endTime - now;
-
-      if (remaining <= 0) {
-        clearInterval(interval);
-        setTimeLeft(0);
-        finishQuiz(currentExam); // Fim do tempo! Força a finalização.
-      } else {
-        setTimeLeft(remaining);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [view, currentExam, userAnswers]); // Recalcula se as respostas mudarem pra ter a closure atualizada
-
-
-  // Formatação do tempo (MM:SS)
-  const formatTime = (ms) => {
-    if (ms === null) return "Sem limite";
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const activeDraft = exams.find(e => e.status === 'draft');
-
-  // --- RENDERIZAÇÃO ---
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#FAFAFC] flex flex-col items-center justify-center">
-        <BrainCircuit className="w-12 h-12 text-indigo-600 animate-pulse mb-4" />
-        <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Sincronizando Nuvem...</p>
-      </div>
-    );
-  }
-
-  const pageVariants = {
-    initial: { opacity: 0, y: 15 },
-    enter: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
-    exit: { opacity: 0, y: -15, transition: { duration: 0.3 } }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#FAFAFC] text-[#1E293B] font-sans selection:bg-indigo-100">
-      
-      {/* Header */}
-      <nav className="fixed top-0 w-full z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('home')}>
-            <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-2 rounded-xl shadow-md group-hover:scale-105 transition-all">
-              <BrainCircuit className="text-white w-5 h-5" />
-            </div>
-            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-900 to-violet-800">
-              Gênio.app
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setView('history')} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">
-              <History className="w-4 h-4" /> <span className="hidden sm:inline">Histórico</span>
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      <main className="pt-24 pb-32 max-w-3xl mx-auto px-6">
-        <AnimatePresence mode="wait">
-          
-          {/* TELA INICIAL */}
-          {view === 'home' && (
-            <motion.div key="home" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="space-y-12 py-8">
-              <div className="text-center space-y-6">
-                <div className="inline-flex items-center gap-2 bg-violet-100 text-violet-700 px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest">
-                  <Flame className="w-4 h-4" /> Salvo na Nuvem
-                </div>
-                <h1 className="text-5xl sm:text-6xl font-black text-slate-900 leading-[1.1]">
-                  Estude de forma <span className="text-indigo-600">inteligente.</span>
-                </h1>
-                <p className="text-lg text-slate-500 max-w-lg mx-auto font-medium">
-                  Crie simulados personalizados, receba dicas da IA e entenda seus erros com explicações super fáceis.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-4 max-w-sm mx-auto">
-                <button 
-                  onClick={() => setView('setup')}
-                  className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-lg shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-3"
-                >
-                  <PlusCircle className="w-6 h-6" />
-                  Criar Nova Prova
-                </button>
-
-                {activeDraft && (
-                  <button 
-                    onClick={() => {
-                      setCurrentExam(activeDraft);
-                      setUserAnswers(activeDraft.userAnswers || {});
-                      setRevealedHints(activeDraft.revealedHints || []);
-                      setView('quiz');
-                    }}
-                    className="w-full py-4 bg-amber-100 text-amber-700 rounded-[1.5rem] font-black text-lg hover:bg-amber-200 transition-all flex items-center justify-center gap-3 border border-amber-200"
-                  >
-                    <PlayCircle className="w-6 h-6" />
-                    Continuar Prova Pendente
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* SETUP (CRIAR PROVA) */}
-          {view === 'setup' && (
-            <motion.div key="setup" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="bg-white p-6 sm:p-10 rounded-[2rem] shadow-xl border border-slate-100 space-y-8">
-              <div>
-                <h2 className="text-3xl font-black text-slate-900">Nova Prova</h2>
-                <p className="text-slate-500 font-medium mt-1">Configure o seu desafio.</p>
-              </div>
-
-              {error && (
-                <div className="p-4 bg-red-50 text-red-600 rounded-xl font-bold border border-red-100 flex items-center gap-2">
-                  <XCircle className="w-5 h-5" /> {error}
-                </div>
-              )}
-
-              <div className="space-y-6">
-                {/* Tema */}
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <BookOpen className="w-4 h-4" /> Tema ou Assunto
-                  </label>
-                  <input 
-                    type="text" autoFocus
-                    placeholder="Ex: Frações, Segunda Guerra Mundial, Verbos..."
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-lg font-bold focus:border-indigo-500 focus:bg-white outline-none transition-all placeholder:font-medium placeholder:text-slate-300"
-                    value={formData.theme}
-                    onChange={(e) => setFormData({...formData, theme: e.target.value})}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Série */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <School className="w-4 h-4" /> Série/Ano
-                    </label>
-                    <select 
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold focus:border-indigo-500 outline-none"
-                      value={formData.grade}
-                      onChange={(e) => setFormData({...formData, grade: e.target.value})}
-                    >
-                      {['5º ano', '6º ano', '7º ano', '8º ano', '9º ano', '1º Médio', '2º Médio', '3º Médio', 'Enem/Vestibular'].map(g => (
-                        <option key={g} value={g}>{g}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Dificuldade */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <Target className="w-4 h-4" /> Nível
-                    </label>
-                    <select 
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold focus:border-indigo-500 outline-none"
-                      value={formData.difficulty}
-                      onChange={(e) => setFormData({...formData, difficulty: e.target.value})}
-                    >
-                      <option value="Fácil">Fácil</option>
-                      <option value="Médio">Médio</option>
-                      <option value="Difícil">Difícil</option>
-                    </select>
-                  </div>
-
-                  {/* Questões */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <Lightbulb className="w-4 h-4" /> Questões
-                    </label>
-                    <select 
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold focus:border-indigo-500 outline-none"
-                      value={formData.quantity}
-                      onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value)})}
-                    >
-                      {[3, 5, 10, 15].map(q => <option key={q} value={q}>{q} Questões</option>)}
-                    </select>
-                  </div>
-
-                  {/* Tempo */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <Clock className="w-4 h-4" /> Duração
-                    </label>
-                    <select 
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold focus:border-indigo-500 outline-none text-indigo-700"
-                      value={formData.duration}
-                      onChange={(e) => setFormData({...formData, duration: parseInt(e.target.value)})}
-                    >
-                      <option value={0}>Sem limite</option>
-                      <option value={5}>5 Minutos</option>
-                      <option value={10}>10 Minutos</option>
-                      <option value={20}>20 Minutos</option>
-                      <option value={30}>30 Minutos</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button
-                  disabled={!formData.theme.trim()}
-                  onClick={generateExam}
-                  className="w-full py-5 mt-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-lg shadow-xl hover:bg-slate-800 transition-all disabled:opacity-30 flex items-center justify-center gap-3"
-                >
-                  Criar Prova Agora
-                  <Sparkles className="w-5 h-5 text-amber-300" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* LOADING */}
-          {view === 'loading' && (
-            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 space-y-6">
-              <div className="relative w-24 h-24">
-                <div className="absolute inset-0 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <BrainCircuit className="w-8 h-8 text-indigo-600 animate-pulse" />
-                </div>
-              </div>
-              <div className="text-center space-y-1">
-                <h3 className="text-2xl font-black text-slate-800">A IA está pensando...</h3>
-                <p className="text-slate-400 font-medium">Elaborando questões e dicas personalizadas.</p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* FAZENDO A PROVA */}
-          {view === 'quiz' && currentExam && (
-            <motion.div key="quiz" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="space-y-6">
-              
-              {/* Barra Fixa de Progresso e Timer */}
-              <div className="sticky top-[80px] z-30 bg-white/90 backdrop-blur-xl p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="bg-slate-100 px-3 py-1.5 rounded-lg text-sm font-black text-slate-600 whitespace-nowrap">
-                    {Object.keys(userAnswers).length} / {currentExam.questions.length} respondidas
-                  </div>
-                  <div className="h-2 w-full max-w-[200px] bg-slate-100 rounded-full overflow-hidden hidden sm:block">
-                    <motion.div 
-                      className="h-full bg-indigo-600"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(Object.keys(userAnswers).length / currentExam.questions.length) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                {timeLeft !== null && (
-                  <div className={`px-4 py-2 rounded-xl font-black text-lg flex items-center gap-2 border-2 ${timeLeft < 60000 ? 'bg-red-50 text-red-600 border-red-200 animate-pulse' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
-                    <Clock className="w-5 h-5" />
-                    {formatTime(timeLeft)}
-                  </div>
-                )}
-              </div>
-
-              {/* Lista de Questões */}
-              <div className="space-y-8">
-                {currentExam.questions.map((q, idx) => (
-                  <div key={q.id} className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                    <div className="flex justify-between items-start gap-4 mb-6">
-                      <div className="flex gap-4">
-                        <span className="text-slate-300 font-black text-2xl">{idx + 1}.</span>
-                        <p className="text-lg sm:text-xl font-bold text-slate-800 pt-0.5">{q.text}</p>
-                      </div>
-                      
-                      {/* Botão de Dica */}
-                      <button 
-                        onClick={() => revealHint(q.id)}
-                        className={`shrink-0 p-2 sm:px-4 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${revealedHints.includes(q.id) ? 'bg-amber-100 text-amber-700' : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600 border border-slate-200'}`}
-                        title="Ver dica"
-                      >
-                        <Lightbulb className="w-4 h-4" />
-                        <span className="hidden sm:inline">{revealedHints.includes(q.id) ? 'Dica aberta' : 'Pedir Dica'}</span>
-                      </button>
-                    </div>
-
-                    {/* Dica Revelada */}
-                    <AnimatePresence>
-                      {revealedHints.includes(q.id) && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 ml-0 sm:ml-10">
-                          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm font-medium flex gap-3">
-                            <Lightbulb className="w-5 h-5 shrink-0 text-amber-500" />
-                            <p>{q.hint}</p>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    
-                    {/* Opções */}
-                    <div className="grid grid-cols-1 gap-3 sm:ml-10">
-                      {q.options.map((opt, i) => {
-                        const isSelected = userAnswers[q.id] === i;
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => handleAnswer(q.id, i)}
-                            className={`flex items-center gap-4 p-4 sm:p-5 rounded-2xl text-left border-2 transition-all ${
-                              isSelected 
-                                ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' 
-                                : 'border-slate-100 hover:border-slate-300 bg-white'
-                            }`}
-                          >
-                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-black uppercase shrink-0 ${
-                              isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-400'
-                            }`}>
-                              {String.fromCharCode(65 + i)}
-                            </div>
-                            <span className={`font-bold text-base ${isSelected ? 'text-indigo-900' : 'text-slate-700'}`}>{opt}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-8">
-                <button
-                  disabled={Object.keys(userAnswers).length < currentExam.questions.length}
-                  onClick={() => finishQuiz(currentExam)}
-                  className="w-full py-6 bg-emerald-500 text-white rounded-[1.5rem] font-black text-xl shadow-xl shadow-emerald-200 hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-                >
-                  Entregar Prova
-                  <CheckCircle2 className="w-6 h-6" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* RESULTADOS GERAIS */}
-          {view === 'result' && currentExam?.results && (
-            <motion.div key="result" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="space-y-6">
-              <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 text-center space-y-8 relative overflow-hidden">
-                
-                {/* Efeito Confete/Sucesso se nota for boa */}
-                {currentExam.results.percentage >= 70 && (
-                  <div className="absolute -top-10 -right-10 text-emerald-100 opacity-50 scale-150 rotate-12">
-                    <Trophy className="w-64 h-64" />
-                  </div>
-                )}
-
-                <div className="relative z-10 space-y-2">
-                  <div className="inline-block px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    Resultado Salvo
-                  </div>
-                  <h2 className="text-3xl font-black text-slate-900">{currentExam.title}</h2>
-                </div>
-
-                <div className="relative z-10 flex flex-col items-center justify-center py-6">
-                  <div className="text-7xl font-black" style={{ color: currentExam.results.percentage >= 70 ? '#10b981' : currentExam.results.percentage >= 50 ? '#f59e0b' : '#ef4444' }}>
-                    {currentExam.results.percentage}%
-                  </div>
-                  <p className="text-slate-400 font-bold uppercase tracking-widest text-sm mt-2">Aproveitamento</p>
-                </div>
-
-                <div className="relative z-10 grid grid-cols-2 gap-4 max-w-sm mx-auto">
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <span className="block text-xs font-black text-slate-400 uppercase">Acertos</span>
-                    <span className="text-2xl font-black text-emerald-600">{currentExam.results.score}</span>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <span className="block text-xs font-black text-slate-400 uppercase">Erros</span>
-                    <span className="text-2xl font-black text-red-500">{currentExam.results.total - currentExam.results.score}</span>
-                  </div>
-                </div>
-
-                <div className="relative z-10 pt-4 space-y-3 sm:space-y-0 sm:flex gap-4 justify-center">
-                  {currentExam.results.score < currentExam.results.total && (
-                    <button 
-                      onClick={() => setView('recommendation')} 
-                      className="w-full sm:w-auto px-8 py-4 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex justify-center items-center gap-2"
-                    >
-                      <BrainCircuit className="w-5 h-5" />
-                      Ver Recomendações da IA
-                    </button>
-                  )}
-                  <button 
-                    onClick={() => setView('home')} 
-                    className="w-full sm:w-auto px-8 py-4 bg-slate-100 text-slate-700 rounded-[1.5rem] font-black hover:bg-slate-200 transition-all"
-                  >
-                    Voltar ao Início
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* RECOMENDAÇÕES DA IA (APRENDIZADO) */}
-          {view === 'recommendation' && currentExam && (
-             <motion.div key="recommendation" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="space-y-8">
-                <div className="flex items-center justify-between px-2 mb-8">
-                  <button onClick={() => setView('result')} className="p-3 bg-white rounded-xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors">
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-                  <h2 className="text-2xl font-black text-slate-900 text-center">Professor de Bolso</h2>
-                  <div className="w-11"></div>
-                </div>
-
-                <div className="bg-indigo-600 text-white p-6 sm:p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
-                  <Sparkles className="absolute top-4 right-4 text-indigo-400 w-24 h-24 opacity-20" />
-                  <h3 className="text-2xl font-black mb-2 relative z-10">Vamos aprender com os erros!</h3>
-                  <p className="text-indigo-100 relative z-10">A IA analisou as questões que você errou e preparou explicações super fáceis para você nunca mais esquecer.</p>
-                </div>
-
-                <div className="space-y-6">
-                  {currentExam.questions.filter(q => userAnswers[q.id] !== q.correctIndex).map((q, idx) => (
-                    <div key={q.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-6">
-                      
-                      {/* Questão e Respostas */}
-                      <div>
-                        <p className="font-bold text-slate-800 text-lg mb-4"><span className="text-red-500 mr-2">❌</span>{q.text}</p>
-                        <div className="space-y-2 text-sm">
-                          <div className="p-3 bg-red-50 text-red-800 rounded-xl border border-red-100 line-through opacity-80">
-                            <strong>Você marcou:</strong> {q.options[userAnswers[q.id]]}
-                          </div>
-                          <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 font-bold">
-                            <strong>O certo é:</strong> {q.options[q.correctIndex]}
-                          </div>
-                        </div>
-                      </div>
-
-                      <hr className="border-slate-100" />
-
-                      {/* Explicação da IA */}
-                      <div className="space-y-4">
-                        <div className="flex gap-3">
-                          <div className="bg-indigo-100 p-2 rounded-xl text-indigo-600 h-fit">
-                            <BrainCircuit className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-black text-indigo-600 uppercase tracking-widest mb-1">Por que essa é a certa?</span>
-                            <p className="text-slate-700 leading-relaxed font-medium">{q.easyExplanation}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-3 mt-4">
-                          <div className="bg-amber-100 p-2 rounded-xl text-amber-600 h-fit">
-                            <Flame className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-black text-amber-600 uppercase tracking-widest mb-1">Dica de Ouro</span>
-                            <p className="text-slate-700 leading-relaxed italic">{q.futureTip}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  ))}
-                </div>
-             </motion.div>
-          )}
-
-          {/* HISTÓRICO */}
-          {view === 'history' && (
-            <motion.div key="history" variants={pageVariants} initial="initial" animate="enter" exit="exit" className="space-y-6">
-              <div className="flex items-center justify-between px-2 mb-6">
-                <button onClick={() => setView('home')} className="p-3 bg-white rounded-xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h2 className="text-2xl font-black text-slate-900">Seu Histórico</h2>
-                <div className="w-11"></div>
-              </div>
-
-              {exams.length === 0 ? (
-                <div className="bg-white p-12 rounded-[2rem] text-center border border-slate-100 space-y-4">
-                  <Trophy className="w-12 h-12 text-slate-200 mx-auto" />
-                  <p className="text-slate-500 font-medium">Você ainda não fez nenhuma prova.</p>
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {exams.map(exam => {
-                    const isDraft = exam.status === 'draft';
-                    return (
-                      <div 
-                        key={exam.id}
-                        onClick={() => { 
-                          setCurrentExam(exam); 
-                          setUserAnswers(exam.userAnswers || {});
-                          setRevealedHints(exam.revealedHints || []);
-                          setView(isDraft ? 'quiz' : 'result'); 
-                        }}
-                        className={`bg-white p-5 rounded-[1.5rem] border shadow-sm cursor-pointer transition-all group ${isDraft ? 'border-amber-200 hover:border-amber-400' : 'border-slate-100 hover:border-indigo-300'}`}
-                      >
-                        <div className="flex justify-between items-center gap-4">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              {isDraft ? (
-                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-1">
-                                  <PauseCircle className="w-3 h-3" /> Pendente
-                                </span>
-                              ) : (
-                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                                  exam.results?.percentage >= 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                                }`}>
-                                  {exam.results?.percentage}% de Acerto
-                                </span>
-                              )}
-                              <span className="text-[10px] font-bold text-slate-400">{new Date(exam.createdAt).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                            <h4 className="text-lg font-bold text-slate-800 line-clamp-1 group-hover:text-indigo-600 transition-colors">{exam.title}</h4>
-                            <p className="text-xs text-slate-500 font-medium">{exam.metadata?.theme} • {exam.metadata?.grade}</p>
-                          </div>
-                          <ChevronRight className={`w-5 h-5 transition-all ${isDraft ? 'text-amber-300 group-hover:text-amber-600' : 'text-slate-300 group-hover:text-indigo-600'}`} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-        </AnimatePresence>
-      </main>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+    <style>
         body { font-family: 'Nunito', sans-serif; background-color: #FAFAFC; }
-      `}} />
-    </div>
-  );
-};
+        .glass-header { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
+        .quiz-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .loading-spinner { border-top-color: #4f46e5; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Esconder scrollbar mas manter funcional */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="text-slate-900 selection:bg-indigo-100">
 
-export default App;
+    <div id="app">
+        <!-- O React será injetado aqui pelo script abaixo -->
+        <div class="min-h-screen flex items-center justify-center">
+            <div class="flex flex-col items-center gap-4">
+                <div class="w-12 h-12 border-4 border-indigo-100 loading-spinner rounded-full"></div>
+                <p class="font-bold text-slate-400 animate-pulse">CARREGANDO INTERFACE...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts necessários para rodar React em arquivo único -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+        // CONFIGURAÇÕES (Preencha com suas chaves conforme o guia anterior se quiser salvar em sua própria nuvem)
+        const apiKey = ""; // Sua Chave Gemini
+        const firebaseConfig = {
+            apiKey: "AIza...",
+            authDomain: "seu-projeto.firebaseapp.com",
+            projectId: "seu-projeto",
+            storageBucket: "seu-projeto.appspot.com",
+            messagingSenderId: "000000",
+            appId: "1:0000:web:0000"
+        };
+
+        // Fallback para quando o Firebase não está configurado (usa memória local)
+        let db, auth;
+        try {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch(e) { console.log("Rodando em modo local"); }
+
+        // --- COMPONENTE REACT ---
+        const { useState, useEffect, useRef } = React;
+        const { motion, AnimatePresence } = window.Motion;
+
+        function App() {
+            const [view, setView] = useState('home');
+            const [user, setUser] = useState(null);
+            const [exams, setExams] = useState([]);
+            const [currentExam, setCurrentExam] = useState(null);
+            const [userAnswers, setUserAnswers] = useState({});
+            const [revealedHints, setRevealedHints] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [timeLeft, setTimeLeft] = useState(null);
+            const [formData, setFormData] = useState({ theme: '', grade: '9º ano', difficulty: 'Médio', quantity: 5, duration: 0 });
+
+            // Autenticação
+            useEffect(() => {
+                if (!auth) return;
+                signInAnonymously(auth);
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        setUser(u);
+                        // Escutar banco de dados
+                        const examsRef = collection(db, 'provas_usuarios', u.uid, 'historico');
+                        onSnapshot(examsRef, (snap) => {
+                            const list = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                            setExams(list.sort((a,b) => b.createdAt - a.createdAt));
+                        });
+                    }
+                });
+            }, []);
+
+            // Salvar Progresso
+            const saveToCloud = async (id, data) => {
+                if (!user || !db) return;
+                await setDoc(doc(db, 'provas_usuarios', user.uid, 'historico', id), data, { merge: true });
+            };
+
+            const generateExam = async () => {
+                setLoading(true);
+                setView('loading');
+                const prompt = `Crie uma prova escolar JSON. Tema: ${formData.theme}, Ano: ${formData.grade}, Nível: ${formData.difficulty}, Qtd: ${formData.quantity}. Formato: { "title": "...", "questions": [{ "id": "q1", "text": "...", "options": ["...","...","...","..."], "correctIndex": 0, "hint": "...", "easyExplanation": "...", "futureTip": "..." }] }`;
+
+                try {
+                    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } })
+                    });
+                    const data = await resp.json();
+                    const exam = JSON.parse(data.candidates[0].content.parts[0].text);
+                    const finalExam = { ...exam, id: Date.now().toString(), metadata: formData, status: 'draft', createdAt: Date.now(), startedAt: Date.now(), userAnswers: {}, revealedHints: [] };
+                    
+                    setCurrentExam(finalExam);
+                    setUserAnswers({});
+                    setRevealedHints([]);
+                    setView('quiz');
+                    saveToCloud(finalExam.id, finalExam);
+                } catch (e) {
+                    alert("Erro ao gerar prova. Verifique sua chave de API.");
+                    setView('setup');
+                } finally { setLoading(false); }
+            };
+
+            const finishQuiz = (exam = currentExam) => {
+                let score = 0;
+                exam.questions.forEach(q => { if (userAnswers[q.id] === q.correctIndex) score++; });
+                const results = { score, total: exam.questions.length, percentage: Math.round((score/exam.questions.length)*100) };
+                const updated = { ...exam, status: 'completed', results, userAnswers };
+                setCurrentExam(updated);
+                saveToCloud(exam.id, updated);
+                setView('result');
+            };
+
+            // Timer
+            useEffect(() => {
+                if (view !== 'quiz' || !currentExam?.metadata.duration) return;
+                const end = currentExam.startedAt + (currentExam.metadata.duration * 60000);
+                const timer = setInterval(() => {
+                    const diff = end - Date.now();
+                    if (diff <= 0) { clearInterval(timer); finishQuiz(); }
+                    else { setTimeLeft(diff); }
+                }, 1000);
+                return () => clearInterval(timer);
+            }, [view, currentExam]);
+
+            // Auxiliares de ícones
+            const Icon = ({ name, className }) => <i data-lucide={name} class={className}></i>;
+            useEffect(() => { lucide.createIcons(); }, [view, loading, exams]);
+
+            return (
+                <div class="min-h-screen">
+                    {/* Header */}
+                    <nav class="fixed top-0 w-full z-50 glass-header border-b border-slate-200 py-4 px-6">
+                        <div class="max-w-4xl mx-auto flex justify-between items-center">
+                            <div class="flex items-center gap-2 cursor-pointer" onClick={() => setView('home')}>
+                                <div class="bg-indigo-600 p-2 rounded-lg text-white"><Icon name="brain-circuit" className="w-5 h-5"/></div>
+                                <span class="text-xl font-black">Gênio.app</span>
+                            </div>
+                            <button onClick={() => setView('history')} class="text-slate-500 font-bold flex items-center gap-2 hover:bg-slate-100 px-4 py-2 rounded-xl transition-all">
+                                <Icon name="history" className="w-4 h-4"/> Histórico
+                            </button>
+                        </div>
+                    </nav>
+
+                    <main class="pt-24 pb-20 max-w-3xl mx-auto px-6">
+                        {view === 'home' && (
+                            <div class="fade-in text-center space-y-10 py-10">
+                                <div class="space-y-4">
+                                    <h1 class="text-5xl font-black leading-tight text-slate-900">Aprenda com o <span class="text-indigo-600">Poder da IA.</span></h1>
+                                    <p class="text-lg text-slate-500 font-medium">Crie provas personalizadas, receba dicas em tempo real e evolua mais rápido.</p>
+                                </div>
+                                <div class="flex flex-col gap-4 max-w-xs mx-auto">
+                                    <button onClick={() => setView('setup')} class="bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                                        <Icon name="plus-circle" className="w-6 h-6"/> Criar Prova
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'setup' && (
+                            <div class="fade-in bg-white p-8 rounded-[2rem] shadow-xl border border-slate-100 space-y-6">
+                                <h2 class="text-2xl font-black">Configurações da Prova</h2>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Tema</label>
+                                        <input type="text" placeholder="Ex: Fotossíntese, História do Brasil..." class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl font-bold focus:border-indigo-500 outline-none transition-all" value={formData.theme} onChange={e => setFormData({...formData, theme: e.target.value})} />
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Ano Escolar</label>
+                                            <select class="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" value={formData.grade} onChange={e => setFormData({...formData, grade: e.target.value})}>
+                                                <option>5º ano</option><option>9º ano</option><option>3º Médio</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Nível</label>
+                                            <select class="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})}>
+                                                <option>Fácil</option><option>Médio</option><option>Difícil</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <button onClick={generateExam} disabled={!formData.theme} class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-slate-800 disabled:opacity-30 transition-all">Começar Jornada</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'loading' && (
+                            <div class="py-20 text-center space-y-4">
+                                <div class="w-16 h-16 border-4 border-indigo-100 loading-spinner rounded-full mx-auto"></div>
+                                <h3 class="text-xl font-black text-slate-800">A IA está gerando sua prova...</h3>
+                            </div>
+                        )}
+
+                        {view === 'quiz' && currentExam && (
+                            <div class="fade-in space-y-6">
+                                <div class="sticky top-24 z-40 bg-white/80 backdrop-blur-md p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
+                                    <span class="font-black text-slate-600">{Object.keys(userAnswers).length} de {currentExam.questions.length} feitas</span>
+                                    {timeLeft && <div class="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-black flex items-center gap-2"><Icon name="clock" className="w-4 h-4"/> {Math.floor(timeLeft/60000)}:{(Math.floor(timeLeft/1000)%60).toString().padStart(2,'0')}</div>}
+                                </div>
+                                {currentExam.questions.map((q, i) => (
+                                    <div key={q.id} class="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-6">
+                                        <div class="flex justify-between gap-4">
+                                            <h3 class="text-lg font-bold"><span class="text-slate-300 mr-2">{i+1}.</span>{q.text}</h3>
+                                            <button onClick={() => { if(!revealedHints.includes(q.id)) setRevealedHints([...revealedHints, q.id]) }} class="bg-amber-50 text-amber-600 p-2 rounded-xl h-fit hover:bg-amber-100"><Icon name="lightbulb" className="w-5 h-5"/></button>
+                                        </div>
+                                        {revealedHints.includes(q.id) && <div class="bg-amber-50 p-4 rounded-xl text-amber-800 text-sm font-bold border border-amber-100 flex gap-2"><Icon name="sparkles" className="w-4 h-4"/> {q.hint}</div>}
+                                        <div class="grid gap-3">
+                                            {q.options.map((opt, idx) => (
+                                                <button key={idx} onClick={() => { setUserAnswers({...userAnswers, [q.id]: idx}); saveToCloud(currentExam.id, {userAnswers: {...userAnswers, [q.id]: idx}}); }} class={`text-left p-4 rounded-2xl border-2 font-bold transition-all ${userAnswers[q.id] === idx ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'}`}>
+                                                    {opt}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={() => finishQuiz()} class="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-xl shadow-lg hover:bg-emerald-600">Entregar Prova</button>
+                            </div>
+                        )}
+
+                        {view === 'result' && (
+                            <div class="fade-in text-center space-y-8 bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100">
+                                <div class="space-y-2">
+                                    <h2 class="text-7xl font-black text-indigo-600">{currentExam.results.percentage}%</h2>
+                                    <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">Aproveitamento</p>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 max-w-sm mx-auto">
+                                    <div class="bg-emerald-50 p-4 rounded-2xl"><span class="text-emerald-700 font-black text-2xl">{currentExam.results.score}</span><p class="text-[10px] uppercase font-black text-emerald-600">Acertos</p></div>
+                                    <div class="bg-red-50 p-4 rounded-2xl"><span class="text-red-700 font-black text-2xl">{currentExam.results.total - currentExam.results.score}</span><p class="text-[10px] uppercase font-black text-red-600">Erros</p></div>
+                                </div>
+                                <div class="flex flex-col gap-3">
+                                    <button onClick={() => setView('recommendation')} class="bg-indigo-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2"><Icon name="brain-circuit" className="w-5 h-5"/> Ver Recomendações IA</button>
+                                    <button onClick={() => setView('home')} class="bg-slate-100 text-slate-600 py-4 rounded-2xl font-black">Voltar ao Início</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'recommendation' && (
+                            <div class="fade-in space-y-6">
+                                <button onClick={() => setView('result')} class="bg-white p-3 rounded-xl shadow-sm"><Icon name="arrow-left" className="w-5 h-5"/></button>
+                                <h2 class="text-2xl font-black">Professor de Bolso</h2>
+                                {currentExam.questions.filter(q => userAnswers[q.id] !== q.correctIndex).map(q => (
+                                    <div key={q.id} class="bg-white p-6 rounded-3xl border border-slate-200 space-y-4">
+                                        <p class="font-bold">❌ {q.text}</p>
+                                        <div class="p-4 bg-emerald-50 text-emerald-800 rounded-xl font-bold text-sm">O correto era: {q.options[q.correctIndex]}</div>
+                                        <div class="space-y-2">
+                                            <p class="text-sm text-slate-600"><span class="font-black text-indigo-600 block text-[10px] uppercase mb-1">Explicação Fácil</span> {q.easyExplanation}</p>
+                                            <p class="text-sm text-amber-700 italic font-bold">Dica de Ouro: {q.futureTip}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {view === 'history' && (
+                            <div class="fade-in space-y-6">
+                                <div class="flex items-center gap-4">
+                                    <button onClick={() => setView('home')} class="bg-white p-3 rounded-xl shadow-sm"><Icon name="arrow-left" className="w-5 h-5"/></button>
+                                    <h2 class="text-2xl font-black">Seu Histórico</h2>
+                                </div>
+                                <div class="grid gap-4">
+                                    {exams.map(e => (
+                                        <div key={e.id} onClick={() => { setCurrentExam(e); setUserAnswers(e.userAnswers || {}); setView(e.status === 'draft' ? 'quiz' : 'result'); }} class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm cursor-pointer hover:border-indigo-300 transition-all flex justify-between items-center">
+                                            <div>
+                                                <h4 class="font-bold">{e.title}</h4>
+                                                <p class="text-xs text-slate-400 font-bold">{e.metadata?.theme} • {e.results ? e.results.percentage + '%' : 'Pendente'}</p>
+                                            </div>
+                                            <Icon name="chevron-right" className="text-slate-300 w-5 h-5"/>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('app'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
+
 
