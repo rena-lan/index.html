@@ -4,298 +4,291 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gerador de Provas Inteligente</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
     <style>
-        /* Design Minimalista e Cores Suaves */
-        :root {
-            --primary-color: #4A90E2;
-            --secondary-color: #50E3C2;
-            --bg-color: #F8F9FA;
-            --card-bg: #FFFFFF;
-            --text-main: #333333;
-            --text-light: #777777;
-            --border: #E0E0E0;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-
-        body { background-color: var(--bg-color); color: var(--text-main); line-height: 1.6; }
-
-        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-
-        /* Telas */
-        .screen { display: none; animation: fadeIn 0.4s ease-in-out; }
-        .screen.active { display: block; }
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* Tipografia */
-        h1, h2, h3 { color: var(--primary-color); margin-bottom: 15px; text-align: center; }
-        p { margin-bottom: 15px; }
-
-        /* Botões */
-        .btn {
-            background-color: var(--primary-color); color: white; border: none; padding: 12px 24px;
-            font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.3s; display: inline-block;
-            text-align: center; font-weight: bold; width: 100%; margin-bottom: 10px;
-        }
-        .btn:hover { background-color: #357ABD; }
-        .btn-secondary { background-color: #E0E0E0; color: var(--text-main); }
-        .btn-secondary:hover { background-color: #cccccc; }
-        .btn-success { background-color: var(--secondary-color); color: #000; }
-        .btn-success:hover { background-color: #38cfae; }
-
-        /* Formulários */
-        .card { background: var(--card-bg); padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .form-group { margin-bottom: 20px; text-align: left; }
-        label { display: block; font-weight: bold; margin-bottom: 8px; color: var(--text-main); }
-        input[type="text"], input[type="number"], select {
-            width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; outline: none;
-        }
-        input[type="text"]:focus, select:focus { border-color: var(--primary-color); box-shadow: 0 0 5px rgba(74, 144, 226, 0.3); }
-        
-        /* Checkboxes */
-        .checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; }
-        .checkbox-label { display: flex; align-items: center; background: var(--bg-color); padding: 8px 12px; border-radius: 20px; font-size: 14px; cursor: pointer; border: 1px solid var(--border); }
-        .checkbox-label input { margin-right: 8px; }
-
-        /* Modal Específico */
-        .modal-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000;
-        }
-        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; text-align: center; }
-        .modal-content input { margin-bottom: 20px; }
-        .modal-buttons { display: flex; gap: 10px; }
-
-        /* Layout da Prova Gerada */
-        .exam-header { border-bottom: 2px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
-        .exam-header input.line-input { border: none; border-bottom: 1px solid var(--text-main); outline: none; width: 200px; font-size: 16px; margin-left: 10px; background: transparent;}
-        .question-block { margin-bottom: 25px; text-align: left; }
-        .question-title { font-weight: bold; margin-bottom: 10px; }
-        .options-list { list-style-type: none; margin-left: 10px; }
-        .options-list li { margin-bottom: 5px; }
-        .answer-key { background: #fdfdfd; border: 1px dashed var(--secondary-color); padding: 20px; border-radius: 8px; margin-top: 30px; }
-
-        /* Loading */
-        .loader { border: 6px solid #f3f3f3; border-top: 6px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
+        body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* Impressão (PDF) */
-        @media print {
-            body { background: white; }
-            .no-print { display: none !important; }
-            .container { max-width: 100%; padding: 0; }
-            .card { box-shadow: none; border: none; padding: 0; }
-            .answer-key { page-break-before: always; }
-        }
+        @media print { .no-print { display: none !important; } }
     </style>
 </head>
 <body>
+    <div id="root"></div>
 
-    <div class="container">
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // =========================================================================
+        // 🔑 COLOQUE SUA CHAVE DE API DO GOOGLE GEMINI AQUI ABAIXO:
+        // =========================================================================
+        const apiKey = "AIzaSyA22gFo0F3nTFNTLXx2POHsCupcdtapKd0"; 
+        // =========================================================================
         
-        <div id="screen-home" class="screen active card" style="text-align: center; padding-top: 60px; padding-bottom: 60px;">
-            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#4A90E2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path><path d="M12 7v14"></path></svg>
-            <h1>Gerador de Provas Inteligente</h1>
-            <p style="color: var(--text-light); margin-bottom: 30px;">Crie avaliações personalizadas em segundos com o poder da Inteligência Artificial.</p>
-            <button class="btn" onclick="showScreen('screen-form')">Criar Nova Prova</button>
-            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
-                <button class="btn btn-secondary" style="width: auto;" onclick="alert('Histórico estará disponível na versão conectada ao banco de dados!')">Histórico</button>
-                <button class="btn btn-secondary" style="width: auto;" onclick="alert('Favoritos estarão disponíveis na versão conectada ao banco de dados!')">Favoritos</button>
-            </div>
-        </div>
+        async function fetchGemini(prompt) {
+            if (apiKey === "COLE_SUA_CHAVE_AQUI" || !apiKey) {
+                throw new Error("Erro: Chave de API não configurada. Insira sua chave no código.");
+            }
 
-        <div id="screen-form" class="screen card">
-            <h2>Configurar Prova</h2>
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             
-            <div class="form-group">
-                <label>Matéria</label>
-                <select id="materia">
-                    <option value="História">História</option>
-                    <option value="Ciências">Ciências</option>
-                    <option value="Matemática">Matemática</option>
-                    <option value="Geografia">Geografia</option>
-                    <option value="Português">Português</option>
-                </select>
-            </div>
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            };
 
-            <div class="form-group">
-                <label>Série / Ano Escolar</label>
-                <select id="serie">
-                    <option value="6º Ano do Ensino Fundamental">6º Ano</option>
-                    <option value="7º Ano do Ensino Fundamental">7º Ano</option>
-                    <option value="8º Ano do Ensino Fundamental">8º Ano</option>
-                    <option value="9º Ano do Ensino Fundamental">9º Ano</option>
-                    <option value="1º Ano do Ensino Médio">1º Ano (Ensino Médio)</option>
-                    <option value="2º Ano do Ensino Médio">2º Ano (Ensino Médio)</option>
-                    <option value="3º Ano do Ensino Médio">3º Ano (Ensino Médio)</option>
-                </select>
-            </div>
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-            <div class="form-group">
-                <label>Tema da Prova</label>
-                <input type="text" id="tema" placeholder="Ex: Sistema Solar, Revolução Industrial..." required>
-            </div>
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || "Erro ao conectar com a IA");
+            }
 
-            <div class="form-group">
-                <label>Nível de Dificuldade</label>
-                <select id="dificuldade">
-                    <option value="Fácil">Fácil</option>
-                    <option value="Médio" selected>Médio</option>
-                    <option value="Difícil">Difícil</option>
-                </select>
-            </div>
+            const data = await response.json();
+            const text = data.candidates[0].content.parts[0].text;
+            return JSON.parse(text);
+        }
 
-            <div class="form-group">
-                <label>Tipos de Questões (Escolha os desejados)</label>
-                <div class="checkbox-group">
-                    <label class="checkbox-label"><input type="checkbox" checked value="Múltipla escolha"> Múltipla escolha</label>
-                    <label class="checkbox-label"><input type="checkbox" checked value="Verdadeiro ou Falso"> Verdadeiro ou Falso</label>
-                    <label class="checkbox-label"><input type="checkbox" value="Dissertativa"> Dissertativa</label>
-                    <label class="checkbox-label"><input type="checkbox" value="Completar"> Completar a frase</label>
+        function App() {
+            const [view, setView] = useState('home');
+            const [loading, setLoading] = useState(false);
+            const [currentExam, setCurrentExam] = useState(null);
+            const [userAnswers, setUserAnswers] = useState({});
+            const [examsHistory, setExamsHistory] = useState([]);
+
+            useEffect(() => {
+                const saved = localStorage.getItem('exams_db');
+                if (saved) setExamsHistory(JSON.parse(saved));
+            }, []);
+
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [view, loading]);
+
+            const handleCreateExam = async (formData) => {
+                setLoading(true);
+                try {
+                    const prompt = `Crie uma prova de múltipla escolha:
+                    Tema: ${formData.tema}
+                    Série: ${formData.serie}
+                    Matéria: ${formData.materia}
+                    Nível: ${formData.nivel}
+                    Quantidade: ${formData.quantidade}
+                    JSON format: { "titulo": "string", "tempoLimitado": ${formData.tempo}, "questoes": [{ "id": 1, "enunciado": "string", "opcoes": ["a", "b", "c", "d"], "respostaCorretaIndex": 0, "dica": "string" }] }`;
+
+                    const exam = await fetchGemini(prompt);
+                    exam.id = Date.now();
+                    exam.materia = formData.materia;
+                    exam.serie = formData.serie;
+                    exam.nivel = formData.nivel;
+                    
+                    setCurrentExam(exam);
+                    setView('taking');
+                } catch (err) {
+                    alert(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {loading && (
+                        <div className="fixed inset-0 bg-white/90 z-50 flex flex-col items-center justify-center">
+                            <div className="loader mb-4"></div>
+                            <p className="font-bold text-indigo-900">Gerando sua prova com IA...</p>
+                        </div>
+                    )}
+
+                    <nav className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-40 no-print">
+                        <h1 className="font-bold text-xl text-indigo-600 cursor-pointer" onClick={() => setView('home')}>ProvasSmart</h1>
+                        <button onClick={() => setView('create')} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold">Nova Prova</button>
+                    </nav>
+
+                    <main className="p-4 max-w-4xl mx-auto w-full">
+                        {view === 'home' && <HomeView onStart={() => setView('create')} history={examsHistory} />}
+                        {view === 'create' && <CreateForm onSubmit={handleCreateExam} />}
+                        {view === 'taking' && <TakingView exam={currentExam} onFinish={(ans) => { 
+                            setUserAnswers(ans); 
+                            const historyItem = {...currentExam, userAnswers: ans, date: new Date().toISOString()};
+                            const newHistory = [historyItem, ...examsHistory];
+                            setExamsHistory(newHistory);
+                            localStorage.setItem('exams_db', JSON.stringify(newHistory));
+                            setView('results'); 
+                        }} />}
+                        {view === 'results' && <ResultsView exam={currentExam} answers={userAnswers} onHome={() => setView('home')} />}
+                    </main>
                 </div>
-            </div>
+            );
+        }
 
-            <button class="btn btn-success" onclick="openSpecificModal()">Avançar para Gerar</button>
-            <button class="btn btn-secondary" onclick="showScreen('screen-home')">Voltar</button>
-        </div>
-
-        <div id="screen-loading" class="screen card" style="text-align: center; padding: 60px 20px;">
-            <div class="loader"></div>
-            <h2>A Inteligência Artificial está trabalhando...</h2>
-            <p id="loading-text">Criando perguntas variadas e educativas baseadas nas suas escolhas.</p>
-        </div>
-
-        <div id="screen-exam" class="screen card">
-            
-            <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn btn-success" style="width: auto; flex: 1;" onclick="window.print()">Baixar em PDF / Imprimir</button>
-                <button class="btn btn-secondary" style="width: auto; flex: 1;" onclick="alert('Link da prova copiado para a área de transferência!')">Compartilhar</button>
-                <button class="btn" style="width: auto; flex: 1;" onclick="showScreen('screen-form')">Gerar Nova Versão</button>
-            </div>
-
-            <div id="print-area">
-                <div class="exam-header">
-                    <h2 style="color: black; text-align: left;" id="exam-title-display">Avaliação de [Matéria]</h2>
-                    <p><strong>Tema:</strong> <span id="exam-theme-display">Tema aqui</span> | <strong>Série:</strong> <span id="exam-serie-display">Série</span> | <strong>Nível:</strong> <span id="exam-diff-display">Nível</span></p>
-                    <p style="margin-top: 15px;">
-                        <strong>Nome do Aluno(a):</strong> <input type="text" class="line-input" style="width: 300px;">
-                        <strong>Data:</strong> ___/___/20__
-                    </p>
+        function HomeView({ onStart, history }) {
+            return (
+                <div className="text-center py-12 fade-in">
+                    <h2 className="text-4xl font-black mb-4">Bem-vindo ao Gerador de Provas</h2>
+                    <p className="text-slate-500 mb-8">Crie avaliações personalizadas em segundos usando inteligência artificial.</p>
+                    <button onClick={onStart} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold text-xl shadow-lg">Começar Agora</button>
+                    
+                    {history.length > 0 && (
+                        <div className="mt-12 text-left">
+                            <h3 className="font-bold text-lg mb-4">Histórico Recente</h3>
+                            <div className="grid gap-4">
+                                {history.slice(0, 3).map(ex => (
+                                    <div key={ex.id} className="bg-white p-4 rounded-xl border flex justify-between items-center">
+                                        <span>{ex.titulo}</span>
+                                        <span className="text-xs text-slate-400">{ex.materia}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
+            );
+        }
 
-                <div id="questions-container">
+        function CreateForm({ onSubmit }) {
+            const [form, setForm] = useState({ tema: '', serie: '6º ano', materia: 'História', nivel: 'Médio', quantidade: 5, tempo: 0 });
+
+            const handleSubmit = (e) => {
+                e.preventDefault(); // IMPEDE O REFRESH DA PAGINA
+                if(!form.tema) return alert("Digite um tema!");
+                onSubmit(form);
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="bg-white p-6 rounded-3xl shadow-sm border space-y-4 fade-in">
+                    <h2 className="text-2xl font-bold mb-4">Configurar Prova</h2>
+                    <div>
+                        <label className="block font-bold mb-1">Tema da Prova</label>
+                        <input type="text" className="w-full p-3 bg-slate-50 border rounded-xl" placeholder="Ex: Fotossíntese" 
+                        value={form.tema} onChange={e => setForm({...form, tema: e.target.value})} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block font-bold mb-1">Série</label>
+                            <select className="w-full p-3 bg-slate-50 border rounded-xl" value={form.serie} onChange={e => setForm({...form, serie: e.target.value})}>
+                                <option>6º ano</option><option>7º ano</option><option>8º ano</option><option>Ensino Médio</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-1">Matéria</label>
+                            <select className="w-full p-3 bg-slate-50 border rounded-xl" value={form.materia} onChange={e => setForm({...form, materia: e.target.value})}>
+                                <option>História</option><option>Ciências</option><option>Matemática</option><option>Português</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block font-bold mb-1">Dificuldade</label>
+                            <select className="w-full p-3 bg-slate-50 border rounded-xl" value={form.nivel} onChange={e => setForm({...form, nivel: e.target.value})}>
+                                <option>Fácil</option><option>Médio</option><option>Difícil</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-1">Questões</label>
+                            <input type="number" className="w-full p-3 bg-slate-50 border rounded-xl" value={form.quantidade} onChange={e => setForm({...form, quantidade: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-1">Tempo (min)</label>
+                            <select className="w-full p-3 bg-slate-50 border rounded-xl" value={form.tempo} onChange={e => setForm({...form, tempo: e.target.value})}>
+                                <option value="0">Sem tempo</option>
+                                <option value="10">10 min</option>
+                                <option value="30">30 min</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" className="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg mt-4">Gerar Prova</button>
+                </form>
+            );
+        }
+
+        function TakingView({ exam, onFinish }) {
+            const [answers, setAnswers] = useState({});
+            const [timeLeft, setTimeLeft] = useState(exam.tempoLimitado ? exam.tempoLimitado * 60 : null);
+
+            useEffect(() => {
+                if (timeLeft === null) return;
+                if (timeLeft <= 0) { onFinish(answers); return; }
+                const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+                return () => clearInterval(timer);
+            }, [timeLeft]);
+
+            const formatTime = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2, '0')}`;
+
+            return (
+                <div className="pb-20 fade-in">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold">{exam.titulo}</h2>
+                        {timeLeft !== null && (
+                            <div className="fixed bottom-4 right-4 bg-slate-900 text-white px-4 py-2 rounded-full font-mono text-xl z-50">
+                                {formatTime(timeLeft)}
+                            </div>
+                        )}
                     </div>
 
-                <div class="answer-key" id="answer-key-container">
-                    <h3>Gabarito do Professor</h3>
-                    <div id="answers-container">
-                        </div>
+                    <div className="space-y-6">
+                        {exam.questoes.map((q, idx) => (
+                            <div key={q.id} className="bg-white p-6 rounded-2xl border shadow-sm">
+                                <p className="font-bold text-lg mb-4">{idx + 1}. {q.enunciado}</p>
+                                <div className="space-y-2">
+                                    {q.opcoes.map((opt, i) => (
+                                        <label key={i} className={`flex items-center p-3 border rounded-xl cursor-pointer transition ${answers[q.id] === i ? 'bg-indigo-50 border-indigo-500' : 'hover:bg-slate-50'}`}>
+                                            <input type="radio" name={`q-${q.id}`} className="mr-3" onChange={() => setAnswers({...answers, [q.id]: i})} checked={answers[q.id] === i} />
+                                            {opt}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={() => onFinish(answers)} className="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold mt-8">Finalizar e Entregar</button>
                 </div>
-            </div>
-            
-        </div>
-    </div>
-
-    <div id="specificModal" class="modal-overlay">
-        <div class="modal-content">
-            <h3 style="color: var(--text-main);">Detalhe seu pedido</h3>
-            <p>O que você quer saber especificamente sobre <strong id="modal-theme-text"></strong>?</p>
-            <input type="text" id="especificidade" placeholder="Ex: Focar nas causas principais, focar em equações...">
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="generateExam()">Pular</button>
-                <button class="btn" onclick="generateExam()">Continuar e Criar</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Função para trocar de telas
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
+            );
         }
 
-        // Função para abrir a pergunta específica antes de gerar
-        function openSpecificModal() {
-            const tema = document.getElementById('tema').value;
-            if(!tema) {
-                alert("Por favor, preencha o Tema da prova primeiro!");
-                return;
-            }
-            document.getElementById('modal-theme-text').innerText = tema;
-            document.getElementById('specificModal').style.display = 'flex';
+        function ResultsView({ exam, answers, onHome }) {
+            const score = exam.questoes.reduce((acc, q) => acc + (answers[q.id] === q.respostaCorretaIndex ? 1 : 0), 0);
+            const percent = Math.round((score / exam.questoes.length) * 100);
+
+            return (
+                <div className="fade-in">
+                    <div className="bg-white p-8 rounded-3xl border text-center mb-8">
+                        <h2 className="text-3xl font-bold mb-2">Resultado: {percent}%</h2>
+                        <p className="text-slate-500">Você acertou {score} de {exam.questoes.length} questões.</p>
+                        <button onClick={onHome} className="mt-6 text-indigo-600 font-bold">Voltar ao Início</button>
+                        <button onClick={() => window.print()} className="ml-4 no-print bg-slate-100 p-2 rounded-lg">Imprimir PDF</button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {exam.questoes.map((q, idx) => {
+                            const isCorrect = answers[q.id] === q.respostaCorretaIndex;
+                            return (
+                                <div key={q.id} className={`p-4 rounded-xl border ${isCorrect ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                                    <p className="font-bold">{idx+1}. {q.enunciado}</p>
+                                    <p className="text-sm mt-2">Sua resposta: <span className={isCorrect ? 'text-emerald-700 font-bold' : 'text-red-700'}>{q.opcoes[answers[q.id]] || "Não respondida"}</span></p>
+                                    {!isCorrect && <p className="text-sm text-emerald-700">Correta: {q.opcoes[q.respostaCorretaIndex]}</p>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
         }
 
-        // Função que simula a IA gerando a prova
-        function generateExam() {
-            // Fecha o modal
-            document.getElementById('specificModal').style.display = 'none';
-            
-            // Pega os dados do form
-            const materia = document.getElementById('materia').value;
-            const serie = document.getElementById('serie').value;
-            const tema = document.getElementById('tema').value;
-            const dificuldade = document.getElementById('dificuldade').value;
-            const especificidade = document.getElementById('especificidade').value;
-
-            // Mostra tela de carregamento
-            showScreen('screen-loading');
-
-            // Simula o tempo de processamento de uma IA (3 segundos)
-            setTimeout(() => {
-                renderExam(materia, serie, tema, dificuldade, especificidade);
-                showScreen('screen-exam');
-            }, 3000);
-        }
-
-        // Renderiza o layout da prova (Simulação de Retorno da IA)
-        function renderExam(materia, serie, tema, dificuldade, especificidade) {
-            document.getElementById('exam-title-display').innerText = `Avaliação de ${materia}`;
-            document.getElementById('exam-theme-display').innerText = tema;
-            document.getElementById('exam-serie-display').innerText = serie;
-            document.getElementById('exam-diff-display').innerText = dificuldade;
-
-            const qContainer = document.getElementById('questions-container');
-            const aContainer = document.getElementById('answers-container');
-            
-            // Aqui uma API real como o Google Gemini retornaria um JSON. 
-            // Como estamos no Front-end, geramos um conteúdo de exemplo adaptado ao tema.
-            
-            let focoTexto = especificidade ? `(Foco especial em: ${especificidade})` : "";
-
-            qContainer.innerHTML = `
-                <div class="question-block">
-                    <p class="question-title">1. (Múltipla Escolha) Sobre o tema "${tema}", qual das alternativas abaixo é considerada a mais correta de acordo com os estudos de ${materia} para o ${serie}? ${focoTexto}</p>
-                    <ul class="options-list">
-                        <li>( A ) Uma afirmação incorreta criada pela IA.</li>
-                        <li>( B ) A resposta correta detalhada e educativa gerada pela IA.</li>
-                        <li>( C ) Uma afirmação parcialmente certa, mas com erro conceitual.</li>
-                        <li>( D ) Uma afirmação totalmente fora do contexto.</li>
-                    </ul>
-                </div>
-                
-                <div class="question-block">
-                    <p class="question-title">2. (Verdadeiro ou Falso) Analise as afirmações abaixo sobre "${tema}" e marque (V) para Verdadeiro e (F) para Falso:</p>
-                    <ul class="options-list">
-                        <li>(   ) Primeira afirmação contextualizada gerada pela IA.</li>
-                        <li>(   ) Segunda afirmação contextualizada gerada pela IA.</li>
-                        <li>(   ) Terceira afirmação contextualizada gerada pela IA.</li>
-                    </ul>
-                </div>
-
-                <div class="question-block">
-                    <p class="question-title">3. (Dissertativa) Explique com suas palavras a importância de compreender "${tema}" no contexto atual. Cite pelo menos dois exemplos.</p>
-                    <br><br><br><br>
-                </div>
-            `;
-
-            aContainer.innerHTML = `
-                <p><strong>Questão 1:</strong> Alternativa ( B )</p>
-                <p><strong>Questão 2:</strong> V, F, V</p>
-                <p><strong>Questão 3 (Sugestão de Resposta):</strong> O aluno deve abordar os principais conceitos de ${tema}, demonstrando compreensão do impacto disso em ${materia}. Deve citar dois exemplos claros relacionados ao tema abordado.</p>
-            `;
-        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
